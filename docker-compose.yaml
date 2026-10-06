@@ -1,24 +1,11 @@
-version: '3.8'
-
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: token-exchange-backend
+proxy:
+    image: nginx:alpine
+    container_name: token-exchange-proxy
     ports:
-      - "3001:3001"
-    environment:
-      - PORT=3001
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: token-exchange-frontend
-    ports:
-      - "5173:5173"
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
+      - frontend
       - backend
     restart: unless-stopped
