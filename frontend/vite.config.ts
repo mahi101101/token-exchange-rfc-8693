@@ -8,4 +8,7 @@ export default defineConfig({
     react(),
     tailwindcss(), 
   ],
+  server: {
+    allowedHosts: ['mhomeserver.tail5d8a41.ts.net']
+  }
 })
