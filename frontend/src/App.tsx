@@ -5,20 +5,19 @@ import { useState, useEffect } from 'react';
 // =====================================================================
 const mockBackend = {
   getHumanToken: async () => {
-    const response = await fetch('http://localhost:3001/api/auth/human');
+    const response = await fetch('/api/auth/human');
     const data = await response.json();
     return data.access_token;
   },
   getAgentToken: async () => {
-    const response = await fetch('http://localhost:3001/api/auth/agent', { 
+    const response = await fetch('/api/auth/agent', { 
         method: 'POST' 
     });
     const data = await response.json();
     return data.access_token;
   },
   exchangeToken: async (subjectToken: string, actorToken: string) => {
-    // Standard OAuth 2.0 token endpoints expect form-urlencoded data
-    const response = await fetch('http://localhost:3001/api/auth/exchange', {
+    const response = await fetch('/api/auth/exchange', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -35,7 +34,7 @@ const mockBackend = {
     return data.access_token;
   },
   introspectToken: async (token: string) => {
-    const response = await fetch('http://localhost:3001/api/auth/introspect', {
+    const response = await fetch('/api/auth/introspect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token })
@@ -151,7 +150,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0a0a0b] text-gray-200 p-8 font-sans">
       
-      {/* Header */}
       <header className="max-w-6xl mx-auto mb-8 text-center border-b border-gray-800 pb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-gray-100">
           the handoff <span className="text-gray-500">—</span> <span className="text-orange-500">token exchange</span> demo
@@ -161,7 +159,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Grid */}
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* LEFT COLUMN: THE HUMAN */}
@@ -265,10 +262,9 @@ export default function App() {
                 <h2 className="text-xl font-bold text-white mb-2">Act 3a — Agent gets its own identity {agentToken && '✅'}</h2>
                 <p className="text-gray-400 text-sm mb-4">Got my own token via <code className="text-purple-400">client_credentials</code>.</p>
                 
-                {/* NEW: Show the HTTP Request for Act 3a */}
                 <HttpRequestViewer 
                   method="POST" 
-                  url="http://localhost:3001/api/auth/agent" 
+                  url="/api/auth/agent" 
                   body="grant_type=client_credentials&#10;client_id=app_agent_m2m&#10;client_secret=**********" 
                 />
 
@@ -284,10 +280,9 @@ export default function App() {
                       I send both tokens to the IdP: the human's as <code>subject_token</code> and mine as <code>actor_token</code>.
                     </p>
                     
-                    {/* NEW: Show the HTTP Request for Act 3b */}
                     <HttpRequestViewer 
                       method="POST" 
-                      url="http://localhost:3001/api/auth/exchange" 
+                      url="/api/auth/exchange" 
                       body={`grant_type=urn:ietf:params:oauth:grant-type:token-exchange\nrequested_token_type=urn:ietf:params:oauth:token-type:access_token\nsubject_token=${humanToken?.substring(0, 30)}...\nsubject_token_type=urn:ietf:params:oauth:token-type:jwt\nactor_token=${agentToken?.substring(0, 30)}...\nactor_token_type=urn:ietf:params:oauth:token-type:jwt`}
                     />
 

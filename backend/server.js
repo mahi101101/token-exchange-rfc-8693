@@ -8,15 +8,15 @@ const PORT = 3001;
 // =====================================================================
 // MIDDLEWARE
 // =====================================================================
-app.use(cors({ origin: 'http://localhost:5173' }));
+// Use '*' to allow any origin in this lab environment
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Beautiful terminal logger to show requests during your live demo
+
 app.use((req, res, next) => {
     console.log(`\n======================================================`);
     console.log(`📡 [${req.method}] ${req.originalUrl}`);
     
-    // Safely check if req.body exists and is an object with keys
     if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
         console.log(`📦 Payload:`);
         console.dir(req.body, { colors: true });
@@ -44,9 +44,12 @@ const generateToken = (payload) => {
 };
 
 // =====================================================================
-// ACT 1: Human Login 
+// ROUTING (Bulletproof against Nginx path stripping)
 // =====================================================================
-app.get('/api/auth/human', async (req, res) => {
+const authRouter = express.Router();
+
+// ACT 1: Human Login 
+authRouter.get('/human', async (req, res) => {
     setTimeout(() => {
         const humanToken = generateToken({
             sub: "usr_abf995f2-00ca-33b9-8fd1",
@@ -57,10 +60,8 @@ app.get('/api/auth/human', async (req, res) => {
     }, 800);
 });
 
-// =====================================================================
 // ACT 3a: Agent Identity
-// =====================================================================
-app.post('/api/auth/agent', async (req, res) => {
+authRouter.post('/agent', async (req, res) => {
     setTimeout(() => {
         const agentToken = generateToken({
             sub: "app_agent_m2m",
@@ -71,10 +72,8 @@ app.post('/api/auth/agent', async (req, res) => {
     }, 800);
 });
 
-// =====================================================================
 // ACT 3b: Token Exchange (RFC 8693)
-// =====================================================================
-app.post('/api/auth/exchange', async (req, res) => {
+authRouter.post('/exchange', async (req, res) => {
     const { grant_type, subject_token, actor_token } = req.body;
 
     if (grant_type !== 'urn:ietf:params:oauth:grant-type:token-exchange') {
@@ -86,9 +85,8 @@ app.post('/api/auth/exchange', async (req, res) => {
         const actorPayload = jwt.decode(actor_token);
 
         setTimeout(() => {
-            // The core RFC 8693 logic: Injecting the act claim
             const exchangedToken = generateToken({
-                sub: subPayload.sub,                 
+                sub: subPayload.sub,                
                 client_id: actorPayload.client_id,   
                 act: {
                     sub: actorPayload.sub            
@@ -104,19 +102,20 @@ app.post('/api/auth/exchange', async (req, res) => {
     }
 });
 
-// =====================================================================
 // INTROSPECTION (RFC 7662) - Powers the React UI
-// =====================================================================
-app.post('/api/auth/introspect', (req, res) => {
+authRouter.post('/introspect', (req, res) => {
     const { token } = req.body;
     try {
-        // Verify and decode the token securely
         const decoded = jwt.verify(token, SECRET);
         res.json({ active: true, ...decoded });
     } catch (error) {
         res.json({ active: false });
     }
 });
+
+// Mount the routes on BOTH paths so it works safely locally or through Nginx
+app.use('/api/auth', authRouter);
+app.use('/auth', authRouter);
 
 // Start the server
 app.listen(PORT, () => {
