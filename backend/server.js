@@ -3,7 +3,8 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 
 const app = express();
-const PORT = 3001;
+// Make the port dynamic for deployment
+const PORT = process.env.PORT || 3001;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
@@ -49,7 +50,6 @@ authRouter.get('/human', async (req, res) => {
     }, 800);
 });
 
-// PHASE 3: Token Exchange (RFC 8693)
 // PHASE 2: Agent Identity (Updated to support multiple agents)
 authRouter.post('/agent', async (req, res) => {
     // Read the requested agent name, default to the original if not provided
@@ -173,6 +173,12 @@ authRouter.get('/resource/data', (req, res) => {
     }
 });
 
-app.use('/api/auth', authRouter);
+// =====================================================================
+// MOUNT ROUTERS
+// =====================================================================
 
-app.listen(PORT, () => console.log(`🚀 Dummy BFF Server running on http://localhost:${PORT}`));
+// Mount on BOTH paths so it works locally (vite) AND through Nginx!
+app.use('/api/auth', authRouter);
+app.use('/auth', authRouter);
+
+app.listen(PORT, () => console.log(`🚀 Dummy BFF Server running on port ${PORT}`));
