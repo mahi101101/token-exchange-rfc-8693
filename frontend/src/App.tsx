@@ -52,13 +52,14 @@ const mockBackend = {
 // HTTP REQUEST VIEWER COMPONENT
 // =====================================================================
 const HttpRequestViewer = ({ method, url, body, title }: { method: string, url: string, body?: string, title?: string }) => (
-  <div className="mb-4 bg-black border border-gray-700 rounded-lg p-4 font-mono text-xs text-gray-300 shadow-inner">
+  <div className="mb-4 bg-black border border-gray-700 rounded-lg p-4 font-mono text-xs text-gray-300 shadow-inner overflow-hidden">
     {title && <div className="text-gray-500 mb-2 font-sans font-bold uppercase tracking-wider">{title}</div>}
     <div className="mb-2">
       <span className="text-green-400 font-bold">{method}</span> <span className="text-blue-400">{url}</span>
     </div>
     {body && (
-      <div className="whitespace-pre-wrap text-gray-400 mt-2 border-t border-gray-800 pt-2 leading-loose">
+      {/* ADDED 'break-all' HERE TO FIX OVERFLOW */}
+      <div className="whitespace-pre-wrap break-all text-gray-400 mt-2 border-t border-gray-800 pt-2 leading-loose">
         {body}
       </div>
     )}
@@ -116,19 +117,16 @@ type AppMode = 'basic' | 'advanced' | 'multi-agent';
 export default function App() {
   const [mode, setMode] = useState<AppMode>('basic');
   
-  // Shared state
   const [humanToken, setHumanToken] = useState<string | null>(null);
   const [apiResult, setApiResult] = useState<any>(null);
   const [exchangeError, setExchangeError] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState<string | null>(null);
   
-  // Basic / Advanced Mode state
   const [agentToken, setAgentToken] = useState<string | null>(null);
   const [exchangedToken, setExchangedToken] = useState<string | null>(null);
   const [downscope, setDownscope] = useState(false);
   const [simulateError, setSimulateError] = useState(false);
 
-  // Multi-Agent Mode state
   const [agentChain, setAgentChain] = useState<{ agentId: string, m2mToken: string, exchangedToken: string }[]>([]);
 
   const resetAll = () => {
@@ -303,7 +301,8 @@ export default function App() {
                         title="Identity Provider Request"
                         method="POST" 
                         url="/api/auth/agent" 
-                        body="grant_type=client_credentials\nclient_id=app_agent_m2m\nclient_secret=**********" 
+                        {/* FIX: Use JS template literal to properly parse \n */}
+                        body={`grant_type=client_credentials\nclient_id=app_agent_m2m\nclient_secret=**********`} 
                       />
                     )}
                     <JwtViewer token={agentToken} title="AGENT'S M2M TOKEN" />
