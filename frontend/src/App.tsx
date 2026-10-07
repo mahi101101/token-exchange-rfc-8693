@@ -300,7 +300,6 @@ export default function App() {
                         title="Identity Provider Request"
                         method="POST" 
                         url="/api/auth/agent" 
-                        {/* FIX: Use JS template literal to properly parse \n */}
                         body={`grant_type=client_credentials\nclient_id=app_agent_m2m\nclient_secret=**********`} 
                       />
                     )}
