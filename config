@@ -1,0 +1,11 @@
+# Your default / other account
+Host github.com
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519  # or whatever your original key is named
+
+# Your new mahi101101 account
+Host github-mahi
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_mahi

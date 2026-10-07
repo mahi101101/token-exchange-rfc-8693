@@ -49,16 +49,20 @@ authRouter.get('/human', async (req, res) => {
     }, 800);
 });
 
-// PHASE 2: Agent Identity
+// PHASE 3: Token Exchange (RFC 8693)
+// PHASE 2: Agent Identity (Updated to support multiple agents)
 authRouter.post('/agent', async (req, res) => {
+    // Read the requested agent name, default to the original if not provided
+    const agentId = req.body.agent_id || "app_agent_m2m";
+    
     setTimeout(() => {
         const now = Math.floor(Date.now() / 1000);
         const agentToken = jwt.sign(
             {
                 iss: "https://demo-idp.local/",
                 aud: "https://demo-idp.local/",
-                sub: "app_agent_m2m",
-                client_id: "app_agent_m2m",
+                sub: agentId,
+                client_id: agentId,
                 scope: "exchange:tokens",
                 iat: now,
                 exp: now + 3600
@@ -69,7 +73,7 @@ authRouter.post('/agent', async (req, res) => {
     }, 800);
 });
 
-// PHASE 3: Token Exchange (RFC 8693)
+// PHASE 3: Token Exchange (Updated for RFC 8693 act nesting)
 authRouter.post('/exchange', async (req, res) => {
     const { grant_type, subject_token, actor_token, scope } = req.body;
 
@@ -78,22 +82,28 @@ authRouter.post('/exchange', async (req, res) => {
     }
 
     try {
-        // We MUST verify the subject token to ensure it isn't expired/forged
         const subPayload = jwt.verify(subject_token, SECRET);
         const actorPayload = jwt.verify(actor_token, SECRET);
 
-        // FEATURE TOGGLE: Downscoping
         const finalScopes = scope || subPayload.scope;
 
         setTimeout(() => {
             const now = Math.floor(Date.now() / 1000);
+            
+            // RFC 8693 Section 4.1.1: Nesting the 'act' claim
+            // If the subject token already has an actor, we nest it inside the new actor!
+            const newAct = { sub: actorPayload.sub };
+            if (subPayload.act) {
+                newAct.act = subPayload.act; 
+            }
+
             const exchangedToken = jwt.sign(
                 {
                     iss: "https://demo-idp.local/",
-                    aud: "api://downstream-resource", // NEW AUDIENCE
-                    sub: subPayload.sub,                
+                    aud: "api://downstream-resource",
+                    sub: subPayload.sub, // The subject ALWAYS remains the Human
                     client_id: actorPayload.client_id,   
-                    act: { sub: actorPayload.sub },
+                    act: newAct, // The nested chain of custody
                     scope: finalScopes,
                     iat: now,
                     exp: now + 3600
@@ -111,7 +121,7 @@ authRouter.post('/exchange', async (req, res) => {
                 error_description: 'The subject_token is expired.' 
             });
         }
-        res.status(400).json({ error: 'invalid_request', error_description: 'Failed to parse or verify tokens.' });
+        res.status(400).json({ error: 'invalid_request', error_description: 'Failed to parse tokens' });
     }
 });
 
