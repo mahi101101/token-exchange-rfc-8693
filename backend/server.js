@@ -181,4 +181,5 @@ authRouter.get('/resource/data', (req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/auth', authRouter);
 
-app.listen(PORT, () => console.log(`🚀 Dummy BFF Server running on port ${PORT}`));
+// Change this line at the bottom of server.js:
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Dummy BFF Server running on port ${PORT}`));
