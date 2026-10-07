@@ -48,6 +48,26 @@ const mockBackend = {
   }
 };
 
+// =====================================================================
+// HTTP REQUEST VIEWER COMPONENT
+// =====================================================================
+const HttpRequestViewer = ({ method, url, body, title }: { method: string, url: string, body?: string, title?: string }) => (
+  <div className="mb-4 bg-black border border-gray-700 rounded-lg p-4 font-mono text-xs text-gray-300 shadow-inner">
+    {title && <div className="text-gray-500 mb-2 font-sans font-bold uppercase tracking-wider">{title}</div>}
+    <div className="mb-2">
+      <span className="text-green-400 font-bold">{method}</span> <span className="text-blue-400">{url}</span>
+    </div>
+    {body && (
+      <div className="whitespace-pre-wrap text-gray-400 mt-2 border-t border-gray-800 pt-2 leading-loose">
+        {body}
+      </div>
+    )}
+  </div>
+);
+
+// =====================================================================
+// TOKEN VIEWER COMPONENT
+// =====================================================================
 const JwtViewer = ({ token, title, highlightAct = false }: any) => {
   const [payload, setPayload] = useState<any>(null);
 
@@ -116,11 +136,11 @@ export default function App() {
     setAgentChain([]); setApiResult(null); setExchangeError(null);
   };
 
-const handleHumanLogin = async () => {
+  const handleHumanLogin = async () => {
     setLoadingStep('human');
     const data = await mockBackend.getHumanToken(simulateError && mode === 'advanced');
     setHumanToken(data.access_token);
-
+    
     setAgentToken(null);
     setExchangedToken(null);
     setAgentChain([]);
@@ -218,11 +238,11 @@ const handleHumanLogin = async () => {
       {mode === 'advanced' && (
         <div className="max-w-6xl mx-auto mb-6 p-4 bg-gray-900/50 border border-gray-800 rounded-lg flex flex-wrap gap-6 items-center animate-in fade-in">
           <span className="text-sm font-bold text-gray-400">Security Toggles:</span>
-          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-white" title="Requests fewer privileges during exchange than the original human token has.">
+          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-white">
             <input type="checkbox" checked={downscope} onChange={(e) => setDownscope(e.target.checked)} className="accent-orange-500" />
             Downscope to Read-Only during Exchange
           </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-white" title="Simulates a token that has passed its expiration time to see how the IdP reacts.">
+          <label className="flex items-center gap-2 text-sm cursor-pointer hover:text-white">
             <input type="checkbox" checked={simulateError} onChange={(e) => setSimulateError(e.target.checked)} className="accent-red-500" />
             Simulate Expired Human Token
           </label>
@@ -240,7 +260,6 @@ const handleHumanLogin = async () => {
             <h2 className="text-xl font-bold text-white mb-2">Phase 1: Human Authentication</h2>
             <p className="text-gray-400 text-sm mb-4">
               The flow begins with the human authenticating via a standard OpenID Connect/OAuth 2.0 flow. 
-              The resulting token establishes <strong>who</strong> the user is and what scopes they consented to. Notice that the <strong className="text-purple-400">aud</strong> (audience) is restricted to the Agent service, not the final API.
             </p>
             <button onClick={handleHumanLogin} disabled={!!loadingStep} className="bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-6 rounded-lg w-full transition-colors cursor-pointer">
               {loadingStep === 'human' ? 'Authenticating...' : '🔑 Authenticate Human'}
@@ -273,12 +292,20 @@ const handleHumanLogin = async () => {
                   <div>
                     <h2 className="text-xl font-bold text-white mb-2">Phase 2: Agent Identity</h2>
                     <p className="text-gray-400 text-sm mb-4">
-                      Before the Identity Provider allows delegation, the AI Agent must prove its own identity. 
-                      It requests a Machine-to-Machine (M2M) token using the <strong>Client Credentials</strong> grant.
+                      The AI Agent requests a Machine-to-Machine (M2M) token using the <strong>Client Credentials</strong> grant.
                     </p>
-                    <button onClick={handleSingleAgentLogin} disabled={!!loadingStep} className="bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-6 rounded-lg w-full transition-colors cursor-pointer">
+                    <button onClick={handleSingleAgentLogin} disabled={!!loadingStep} className="bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-6 rounded-lg w-full transition-colors cursor-pointer mb-4">
                       {loadingStep === 'agent' ? 'Authenticating...' : "🚀 Authenticate Agent (M2M)"}
                     </button>
+                    
+                    {agentToken && (
+                      <HttpRequestViewer 
+                        title="Identity Provider Request"
+                        method="POST" 
+                        url="/api/auth/agent" 
+                        body="grant_type=client_credentials\nclient_id=app_agent_m2m\nclient_secret=**********" 
+                      />
+                    )}
                     <JwtViewer token={agentToken} title="AGENT'S M2M TOKEN" />
                   </div>
 
@@ -286,24 +313,28 @@ const handleHumanLogin = async () => {
                     <div className="pt-6 border-t border-gray-800">
                       <h2 className="text-xl font-bold text-white mb-2">Phase 3: Secure Delegation (RFC 8693)</h2>
                       <p className="text-gray-400 text-sm mb-4">
-                        The Agent calls the Token Exchange endpoint, providing the Human's token as the <code>subject_token</code> and its own token as the <code>actor_token</code>.
-                        {mode === 'advanced' && downscope && " Since you checked 'Downscope', the agent is actively requesting fewer privileges than the human originally granted."}
+                        The Agent calls the Token Exchange endpoint, providing both tokens.
                       </p>
 
                       <button onClick={handleSingleTokenExchange} disabled={!!loadingStep} className="bg-green-600 hover:bg-green-500 text-white font-medium py-2 px-6 rounded-lg w-full mb-4 transition-colors cursor-pointer">
                          {loadingStep === 'exchange' ? 'Processing Exchange...' : '🔄 Perform Token Exchange'}
                       </button>
 
+                      {exchangedToken && (
+                        <HttpRequestViewer 
+                          title="Token Exchange Request"
+                          method="POST" 
+                          url="/api/auth/exchange" 
+                          body={`grant_type=urn:ietf:params:oauth:grant-type:token-exchange\nrequested_token_type=urn:ietf:params:oauth:token-type:access_token\nsubject_token=${humanToken?.substring(0, 15)}...\nsubject_token_type=urn:ietf:params:oauth:token-type:jwt\nactor_token=${agentToken?.substring(0, 15)}...\nactor_token_type=urn:ietf:params:oauth:token-type:jwt${downscope && mode === 'advanced' ? '\nscope=read:data' : ''}`}
+                        />
+                      )}
+
                       {exchangeError && (
                         <div className="p-4 bg-red-950/40 border border-red-900/50 rounded-lg text-red-400 text-sm font-mono shadow-inner">
                           ❌ Identity Provider Rejected Request: {exchangeError}
                         </div>
                       )}
-                      {!exchangeError && exchangedToken && (
-                        <p className="text-green-400 text-xs mb-2 flex items-center gap-1">
-                          ✅ Success: Notice the new <strong className="font-mono">act</strong> claim identifying the agent.
-                        </p>
-                      )}
+                      
                       <JwtViewer token={exchangedToken} title="DELEGATED ACCESS TOKEN" highlightAct={true} />
                     </div>
                   )}
@@ -316,22 +347,37 @@ const handleHumanLogin = async () => {
                   <div className="mb-6">
                     <h2 className="text-xl font-bold text-white mb-2">Phase 2 & 3: Agent Chaining</h2>
                     <p className="text-gray-400 text-sm mb-2">
-                      In complex systems, Agent A might ask Agent B to perform a task. If Agent A just hands over the delegated token, the audit trail is broken.
-                    </p>
-                    <p className="text-gray-400 text-sm">
-                      Instead, Agent B performs <em>another</em> Token Exchange. The Identity Provider safely nests the <code className="text-purple-400 font-bold">act</code> claim, recording exactly who handed the token to whom.
+                      Agent B performs another Token Exchange. The IdP safely nests the <code className="text-purple-400 font-bold">act</code> claim, recording the exact chain of custody.
                     </p>
                   </div>
 
-                  {agentChain.map((step, index) => (
+                  {agentChain.map((step, index) => {
+                    const prevToken = index === 0 ? humanToken! : agentChain[index-1].exchangedToken;
+                    return (
                     <div key={index} className="animate-in fade-in slide-in-from-top-4 duration-500 border-l-2 border-purple-500/50 pl-4 ml-2 mt-6">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-4">
                         <span className="bg-purple-900 text-purple-200 text-xs px-2 py-1 rounded font-bold uppercase tracking-wider">Handoff #{index + 1}</span>
                         <h3 className="text-lg font-bold text-white">Delegated to <code className="text-purple-400">{step.agentId}</code></h3>
                       </div>
+
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+                        <HttpRequestViewer 
+                          title="1. Get Agent Identity"
+                          method="POST" 
+                          url="/api/auth/agent" 
+                          body={`grant_type=client_credentials\nclient_id=${step.agentId}\nclient_secret=**********`}
+                        />
+                        <HttpRequestViewer 
+                          title="2. Token Exchange"
+                          method="POST" 
+                          url="/api/auth/exchange" 
+                          body={`grant_type=urn:ietf:params:oauth:grant-type:token-exchange\nsubject_token=${prevToken.substring(0, 15)}...\nactor_token=${step.m2mToken.substring(0, 15)}...`}
+                        />
+                      </div>
+
                       <JwtViewer token={step.exchangedToken} title={`TOKEN HELD BY ${step.agentId.toUpperCase()}`} highlightAct={true} />
                     </div>
-                  ))}
+                  )})}
 
                   {exchangeError && (
                      <div className="p-4 bg-red-950/40 border border-red-900/50 rounded-lg text-red-400 text-sm font-mono mt-4 shadow-inner">
@@ -359,7 +405,7 @@ const handleHumanLogin = async () => {
            <div className="text-emerald-400 text-sm font-bold tracking-widest uppercase mb-6 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Phase 4: Resource Server Verification</div>
            
            <p className="text-sm text-gray-400 mb-6">
-             The final downstream API (Resource Server) enforces strict security. It validates the cryptographic signature, checks the expiration, and most importantly, verifies the <strong>Audience (<code className="text-emerald-400 font-bold">aud</code>)</strong>. It will safely reject the naive human token, but accept the properly exchanged token, logging both the human and the agent(s) involved.
+             The Resource Server enforces strict security. It validates the cryptographic signature, checks the expiration, and verifies the <strong>Audience (<code className="text-emerald-400 font-bold">aud</code>)</strong>. It will safely reject the naive human token, but accept the properly exchanged token.
            </p>
 
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
