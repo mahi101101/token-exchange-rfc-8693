@@ -58,7 +58,6 @@ const HttpRequestViewer = ({ method, url, body, title }: { method: string, url: 
       <span className="text-green-400 font-bold">{method}</span> <span className="text-blue-400">{url}</span>
     </div>
     {body && (
-      {/* ADDED 'break-all' HERE TO FIX OVERFLOW */}
       <div className="whitespace-pre-wrap break-all text-gray-400 mt-2 border-t border-gray-800 pt-2 leading-loose">
         {body}
       </div>
