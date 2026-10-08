@@ -1,527 +1,292 @@
 # The Handoff: OAuth 2.0 Token Exchange (RFC 8693) Demo
 
-A vendor-agnostic, interactive demonstration of how **AI Agents securely impersonate or act on behalf of humans** using the **OAuth 2.0 Token Exchange specification (RFC 8693)**.
+An interactive, full-stack demonstration of how **AI Agents securely act on behalf of human users** using the **OAuth 2.0 Token Exchange specification ([RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693))**.
+
+This application visually contrasts the naive approach (sharing user credentials or tokens directly with an agent) against the standard RFC 8693 token exchange pattern—maintaining an auditable chain of custody via the `act` (actor) claim, enforcing audience restriction (`aud`), and supporting scope downscoping.
 
 ---
 
 ## Architecture
 
-This project uses a **Monorepo** structure with a **Backend-for-Frontend (BFF)** pattern.
+This project follows a **Monorepo** structure implementing a **Backend-for-Frontend (BFF)** pattern.
 
-As requested, the Human OAuth flow is modeled as a **Regular Web Application (Confidential Client)**, meaning the backend handles the authorization code exchange.
-
-The React frontend **never sees the client secrets**.
+The human OAuth flow and AI agent identity management are handled by the backend BFF. The React frontend never holds confidential client secrets.
 
 ```text
-/token-exchange-demo
-├── /frontend
-│   ├── src/App.tsx          # Main UI (Token visualization, Acts 1–3)
-│   └── package.json
-│
-├── /backend
-│   ├── server.js            # Handles IdP communication and CORS
-│   └── package.json
-│
-├── .env                     # Shared environment variables
-└── package.json             # Root (uses `concurrently` to run both)
-```
-
-### Flow Overview
-
-The demo consists of three main acts:
-
-1. **Act 1 — Human Login**
-
-   * The user authenticates with the Identity Provider (IdP).
-   * The backend exchanges the authorization code for a human access token.
-
-2. **Act 3a — AI Agent Identity**
-
-   * The AI Agent authenticates using the Client Credentials grant.
-   * The backend obtains an access token representing the agent itself.
-
-3. **Act 3b — Token Exchange / Delegation**
-
-   * The AI Agent exchanges tokens using **OAuth 2.0 Token Exchange (RFC 8693)**.
-   * The resulting token represents the agent acting on behalf of the human.
-
----
-
-## Prerequisites
-
-You need an OAuth 2.0 / OpenID Connect Identity Provider that supports the required flows.
-
-This demo can be configured with providers such as:
-
-* Auth0
-* Okta
-* Ping
-* Gravitee
-* Other OAuth 2.0 providers supporting RFC 8693
-
-> **Note:** Make sure your Identity Provider supports **OAuth 2.0 Token Exchange (RFC 8693)**. Some providers require custom actions, policies, or feature flags to enable Token Exchange.
-
----
-
-## Identity Provider Setup
-
-To use this demo, create **two applications** in your Identity Provider dashboard.
-
-### 1. Human Application
-
-Create a **Regular Web Application / Confidential Client**.
-
-| Setting          | Value                            |
-| ---------------- | -------------------------------- |
-| Application Type | Regular Web Application          |
-| Client Type      | Confidential                     |
-| Grant Type       | Authorization Code               |
-| Redirect URI     | `http://localhost:3000/callback` |
-
-The human application's client secret must remain on the backend.
-
-### 2. AI Agent Application
-
-Create a **Machine-to-Machine / Confidential Client** application.
-
-| Setting          | Value                              |
-| ---------------- | ---------------------------------- |
-| Application Type | Machine-to-Machine                 |
-| Client Type      | Confidential                       |
-| Grant Types      | Client Credentials, Token Exchange |
-
-The agent application's client secret must also remain on the backend.
-
----
-
-## Environment Variables
-
-Create a `.env` file in the project root.
-
-```env
-# ==========================================
-# 1. Identity Provider Base Config
-# ==========================================
-
-IDP_ISSUER=https://your-tenant.us.auth0.com
-IDP_TOKEN_ENDPOINT=https://your-tenant.us.auth0.com/oauth/token
-IDP_AUTH_ENDPOINT=https://your-tenant.us.auth0.com/authorize
-
-
-# ==========================================
-# 2. Human Application (Act 1)
-# ==========================================
-
-HUMAN_CLIENT_ID=your_human_app_client_id
-HUMAN_CLIENT_SECRET=your_human_app_client_secret
-
-REDIRECT_URI=http://localhost:3000/callback
-
-
-# ==========================================
-# 3. AI Agent Application (Act 3)
-# ==========================================
-
-AGENT_CLIENT_ID=your_agent_app_client_id
-AGENT_CLIENT_SECRET=your_agent_app_client_secret
-```
-
-> **Security:** Never commit your `.env` file or client secrets to GitHub. Add `.env` to your `.gitignore`.
-
-Example:
-
-```gitignore
-.env
-node_modules/
-```
-
----
-
-# The Express.js Backend (BFF)
-
-The Express.js backend acts as the **Backend-for-Frontend (BFF)**.
-
-It is responsible for:
-
-* Communicating with the Identity Provider
-* Keeping OAuth client secrets out of the frontend
-* Exchanging authorization codes
-* Obtaining the AI Agent's access token
-* Performing RFC 8693 Token Exchange
-* Handling CORS
-* Returning tokens to the frontend
-
-## `backend/server.js`
-
-```javascript
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-
-require('dotenv').config({ path: '../.env' });
-
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-
-// ---------------------------------------------------------
-// Act 1: Human Login (Authorization Code Exchange)
-// ---------------------------------------------------------
-
-app.post('/api/human-token', async (req, res) => {
-    const { code } = req.body; // Code received from frontend redirect
-
-    try {
-        const response = await axios.post(
-            process.env.IDP_TOKEN_ENDPOINT,
-            new URLSearchParams({
-                grant_type: 'authorization_code',
-                client_id: process.env.HUMAN_CLIENT_ID,
-                client_secret: process.env.HUMAN_CLIENT_SECRET,
-                code: code,
-                redirect_uri: process.env.REDIRECT_URI
-            })
-        );
-
-        // Send access_token to frontend
-        res.json({
-            access_token: response.data.access_token
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            error: 'Failed to exchange code for human token'
-        });
-    }
-});
-
-
-// ---------------------------------------------------------
-// Act 3a: Agent gets its own identity
-// ---------------------------------------------------------
-
-app.post('/api/agent-token', async (req, res) => {
-    try {
-        const response = await axios.post(
-            process.env.IDP_TOKEN_ENDPOINT,
-            new URLSearchParams({
-                grant_type: 'client_credentials',
-                client_id: process.env.AGENT_CLIENT_ID,
-                client_secret: process.env.AGENT_CLIENT_SECRET,
-                audience: 'api://your-api-audience'
-            })
-        );
-
-        res.json({
-            access_token: response.data.access_token
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            error: 'Failed to get agent token'
-        });
-    }
-});
-
-
-// ---------------------------------------------------------
-// Act 3b: Delegation via Token Exchange (RFC 8693)
-// ---------------------------------------------------------
-
-app.post('/api/token-exchange', async (req, res) => {
-    const { subject_token, actor_token } = req.body;
-
-    try {
-        const response = await axios.post(
-            process.env.IDP_TOKEN_ENDPOINT,
-            new URLSearchParams({
-                grant_type:
-                    'urn:ietf:params:oauth:grant-type:token-exchange',
-
-                client_id: process.env.AGENT_CLIENT_ID,
-                client_secret: process.env.AGENT_CLIENT_SECRET,
-
-                subject_token: subject_token,
-
-                subject_token_type:
-                    'urn:ietf:params:oauth:token-type:access_token',
-
-                actor_token: actor_token,
-
-                actor_token_type:
-                    'urn:ietf:params:oauth:token-type:access_token',
-
-                requested_token_type:
-                    'urn:ietf:params:oauth:token-type:access_token'
-            })
-        );
-
-        res.json({
-            access_token: response.data.access_token
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            error: 'Token exchange failed'
-        });
-    }
-});
-
-
-const PORT = process.env.PORT || 3001;
-
-app.listen(PORT, () => {
-    console.log(`BFF Server running on port ${PORT}`);
-});
-```
-
----
-
-## API Endpoints
-
-The backend exposes the following endpoints:
-
-| Endpoint                   | Purpose                                                    |
-| -------------------------- | ---------------------------------------------------------- |
-| `POST /api/human-token`    | Exchanges the human authorization code for an access token |
-| `POST /api/agent-token`    | Obtains an access token for the AI Agent                   |
-| `POST /api/token-exchange` | Performs RFC 8693 Token Exchange                           |
-
-### `POST /api/human-token`
-
-Exchanges an authorization code received from the frontend for a human access token.
-
-**Request:**
-
-```json
-{
-  "code": "authorization_code"
-}
-```
-
-**Response:**
-
-```json
-{
-  "access_token": "human_access_token"
-}
-```
-
----
-
-### `POST /api/agent-token`
-
-Obtains an access token representing the AI Agent using the Client Credentials grant.
-
-**Response:**
-
-```json
-{
-  "access_token": "agent_access_token"
-}
-```
-
----
-
-### `POST /api/token-exchange`
-
-Performs an OAuth 2.0 Token Exchange using RFC 8693.
-
-**Request:**
-
-```json
-{
-  "subject_token": "human_access_token",
-  "actor_token": "agent_access_token"
-}
-```
-
-**Response:**
-
-```json
-{
-  "access_token": "delegated_access_token"
-}
-```
-
----
-
-## OAuth 2.0 Token Exchange
-
-The key concept demonstrated by this project is **delegation**.
-
-The human first authenticates and receives an access token:
-
-```text
-Human
-  │
-  │ Authorization Code
-  ▼
-Identity Provider
-  │
-  │ Human Access Token
-  ▼
-Backend
-```
-
-The AI Agent then obtains its own identity:
-
-```text
-AI Agent
-  │
-  │ Client Credentials
-  ▼
-Identity Provider
-  │
-  │ Agent Access Token
-  ▼
-Backend
-```
-
-Finally, the backend performs the Token Exchange:
-
-```text
-Human Access Token
-        +
-Agent Access Token
-        │
-        ▼
-   RFC 8693 Token Exchange
-        │
-        ▼
- Delegated Access Token
-```
-
-The resulting token allows the downstream API to understand both:
-
-* **Who the human is**
-* **Which agent is acting on the human's behalf**
-
----
-
-## Security Model
-
-The architecture intentionally keeps OAuth client credentials on the server.
-
-```text
-┌──────────────────────┐
-│    React Frontend    │
-│                      │
-│  No client secrets   │
-└──────────┬───────────┘
-           │
-           │ HTTP
-           ▼
-┌──────────────────────┐
-│    Express BFF       │
-│                      │
-│  Client credentials  │
-│  Token exchange      │
-└──────────┬───────────┘
-           │
-           │ OAuth 2.0
-           ▼
-┌──────────────────────┐
-│    Identity Provider │
-└──────────────────────┘
-```
-
-The frontend should never contain:
-
-* `HUMAN_CLIENT_SECRET`
-* `AGENT_CLIENT_SECRET`
-
-These values belong exclusively on the backend.
-
----
-
-## Running the Demo
-
-Install the dependencies for the monorepo:
-
-```bash
-npm install
-```
-
-Make sure your `.env` file is configured with the appropriate Identity Provider credentials.
-
-Then start both the frontend and backend using the root `package.json`:
-
-```bash
-npm run dev
-```
-
-The frontend and backend will start according to the scripts configured in the root project.
-
----
-
-## Project Structure
-
-```text
-token-exchange-demo/
-│
-├── frontend/
+OAuth 2.0 Token Exchange (RFC 8693) Demo/
+├── frontend/                     # React 19 + TypeScript + Vite + Tailwind CSS v4
 │   ├── src/
-│   │   └── App.tsx
+│   │   ├── App.tsx               # Main interactive UI (JWT & HTTP viewers, 3 modes)
+│   │   └── main.tsx              # React entry point
+│   ├── vite.config.ts            # Base path (/token-exchange/) & dev proxy (/api)
+│   ├── Dockerfile                # Frontend container (Port 5173)
 │   └── package.json
 │
-├── backend/
-│   ├── server.js
+├── backend/                      # Node.js (ES Module) Express BFF & Mock IdP
+│   ├── server.js                 # Token issuance, RFC 8693 exchange, Resource API
+│   ├── Dockerfile                # Backend container (Port 3001)
 │   └── package.json
 │
-├── .env
-├── .gitignore
-├── package.json
+├── docker-compose.yaml           # Multi-container orchestration (Backend, Frontend, Proxy)
+├── nginx.conf                    # Nginx reverse proxy configuration (Port 8080)
 └── README.md
 ```
 
 ---
 
-## Important Notes
+## Key Concepts Demonstrated
 
-### RFC 8693 Support
+### 1. Delegation vs. Impersonation
+* **Naive Impersonation (Anti-pattern):** Passing the human's access token directly to an AI agent. The downstream resource cannot tell whether actions were initiated by the human directly or by an automated agent. Furthermore, audience mismatches occur.
+* **Secure Delegation (RFC 8693):** The agent exchanges the human token and its own client identity for a new **Delegated Token**. The token preserves the human as the `sub` (subject), introduces the agent in the `act` (actor) claim, and retargets the `aud` (audience) to the target resource.
 
-Not every Identity Provider supports OAuth 2.0 Token Exchange in the same way.
+### 2. Audience Restriction (`aud`)
+* The original human token targets `api://agent-service`.
+* The downstream resource server strictly requires `api://downstream-resource`.
+* Calling the downstream API with the naive human token fails with HTTP **403 Forbidden** (`invalid_audience`). The exchanged token succeeds with HTTP **200 OK**.
 
-Depending on the provider, you may need to configure:
-
-* Token Exchange permissions
-* Custom scopes
-* Actions or hooks
-* API/resource server configuration
-* Token Exchange policies
-* Audience configuration
-
-### Audience
-
-The example uses:
-
-```text
-api://your-api-audience
+### 3. Chain of Custody (Nested `act` Claim)
+Under RFC 8693 Section 4.1.1, when multiple agents collaborate in a chain (e.g. Human &rarr; Agent 1 &rarr; Agent 2):
+```json
+{
+  "sub": "usr_abf995f2-00ca-33b9-8fd1",
+  "client_id": "app_ai_agent_v2",
+  "act": {
+    "sub": "app_ai_agent_v2",
+    "act": {
+      "sub": "app_ai_agent_v1"
+    }
+  },
+  "aud": "api://downstream-resource"
+}
 ```
+Every handoff is cryptographically tracked in the token's claims.
 
-Replace this with the actual audience configured for your downstream API.
-
-### Production Considerations
-
-This demo is intended for educational and demonstration purposes.
-
-For production deployments, consider:
-
-* Using secure, `HttpOnly` cookies instead of exposing access tokens to browser JavaScript where possible.
-* Implementing CSRF protection.
-* Restricting CORS to trusted origins.
-* Validating and sanitizing all incoming requests.
-* Validating token claims and issuer/audience.
-* Using short-lived access tokens.
-* Implementing proper token storage and rotation.
-* Avoiding logging of access tokens or client secrets.
-* Using HTTPS in all non-local environments.
+### 4. Scope Reduction (Downscoping)
+During token exchange, the agent can request a subset of permissions (e.g., downscoping from `read:data write:data` to `read:data`), practicing the principle of least privilege.
 
 ---
 
-## Goal
+## Interactive UI Modes
 
-This demo illustrates how **OAuth 2.0 Token Exchange (RFC 8693)** can be used to establish a secure delegation relationship where an **AI Agent acts on behalf of an authenticated human** while maintaining distinct identities for the human and the agent.
+The React frontend includes three dedicated demonstration modes:
+
+1. **Basic Demo**:
+   * Step-by-step walkthrough of Phase 1 (Human Login), Phase 2 (Agent Identity), Phase 3 (Token Exchange), and Phase 4 (Resource Server Verification).
+2. **Advanced Scenarios**:
+   * **Scope Downscoping Toggle**: Request only `read:data` during exchange.
+   * **Expired Token Toggle**: Simulate an expired human token and observe Identity Provider validation rejections.
+3. **Multi-Agent Chain**:
+   * Visualizes recursive agent handoffs. Launch multiple agents sequentially and inspect the nested `act` claims generated at each step.
+
+Each step includes a **Live HTTP Request Viewer** (displaying exact request payloads) and a **Live JWT Decoder** (powered by RFC 7662 token introspection).
+
+---
+
+## Flow Overview
+
+```text
+   [Human User]                   [AI Agent]                 [BFF / IdP]              [Resource Server]
+        │                              │                          │                           │
+  1. Authenticate                      │                          │                           │
+        ├──────────────────────────────┼─────────────────────────>│                           │
+        │<─────────────────────────────┼──────────────────────────┤ (Human Token issued)      │
+        │                              │                          │                           │
+        │                        2. Client Credentials            │                           │
+        │                              ├─────────────────────────>│                           │
+        │                              │<─────────────────────────┤ (Agent M2M Token issued)  │
+        │                              │                          │                           │
+        │                        3. Token Exchange (RFC 8693)     │                           │
+        │                              │  subject_token +         │                           │
+        │                              │  actor_token             │                           │
+        │                              ├─────────────────────────>│                           │
+        │                              │<─────────────────────────┤ (Delegated Token with     │
+        │                              │                          │  nested 'act' claim)      │
+        │                              │                          │                           │
+        │                              │ 4. Access Protected API  │                           │
+        │                              │    (Bearer Delegated Token)                          │
+        │                              ├─────────────────────────────────────────────────────>│
+        │                              │<─────────────────────────────────────────────────────┤ (200 OK)
+```
+
+---
+
+## Backend API Endpoints
+
+The Express server listens on port `3001` and mounts routes on both `/api/auth` and `/auth`:
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/auth/human` | Generates a signed Human Access Token (`?expired=true` to test expiry) |
+| `POST` | `/api/auth/agent` | Generates an Agent M2M Access Token (body: `{ agent_id?: string }`) |
+| `POST` | `/api/auth/exchange` | Performs RFC 8693 Token Exchange (`subject_token`, `actor_token`, `scope`) |
+| `POST` | `/api/auth/introspect` | RFC 7662 Introspection endpoint decoding and validating tokens for the UI |
+| `GET` | `/api/auth/resource/data` | Protected Downstream Resource Server API enforcing audience check |
+
+### 1. `GET /api/auth/human`
+* **Query Parameters:** `expired=true` (optional)
+* **Response:**
+  ```json
+  {
+    "access_token": "eyJhbGciOi..."
+  }
+  ```
+* **Decoded Payload:**
+  ```json
+  {
+    "iss": "https://demo-idp.local/",
+    "aud": "api://agent-service",
+    "sub": "usr_abf995f2-00ca-33b9-8fd1",
+    "client_id": "app_human_ui",
+    "scope": "openid profile email write:data read:data",
+    "iat": 1728374400,
+    "exp": 1728378000
+  }
+  ```
+
+### 2. `POST /api/auth/agent`
+* **Request Body:**
+  ```json
+  {
+    "agent_id": "app_agent_m2m"
+  }
+  ```
+* **Response:**
+  ```json
+  {
+    "access_token": "eyJhbGciOi..."
+  }
+  ```
+
+### 3. `POST /api/auth/exchange`
+* **Request Content-Type:** `application/x-www-form-urlencoded`
+* **Parameters:**
+  ```text
+  grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+  subject_token=<human_token>
+  subject_token_type=urn:ietf:params:oauth:token-type:jwt
+  actor_token=<agent_token>
+  actor_token_type=urn:ietf:params:oauth:token-type:jwt
+  scope=read:data (optional)
+  ```
+* **Response:**
+  ```json
+  {
+    "access_token": "eyJhbGciOi..."
+  }
+  ```
+* **Decoded Payload:**
+  ```json
+  {
+    "iss": "https://demo-idp.local/",
+    "aud": "api://downstream-resource",
+    "sub": "usr_abf995f2-00ca-33b9-8fd1",
+    "client_id": "app_agent_m2m",
+    "act": {
+      "sub": "app_agent_m2m"
+    },
+    "scope": "openid profile email write:data read:data",
+    "iat": 1728374400,
+    "exp": 1728378000
+  }
+  ```
+
+### 4. `GET /api/auth/resource/data`
+* **Header:** `Authorization: Bearer <token>`
+* **Success Response (HTTP 200):**
+  ```json
+  {
+    "success": true,
+    "message": "Successfully accessed protected data!",
+    "actor": "app_agent_m2m"
+  }
+  ```
+* **Audience Mismatch (HTTP 403):**
+  ```json
+  {
+    "error": "invalid_audience",
+    "message": "Token audience is 'api://agent-service'. Expected 'api://downstream-resource'."
+  }
+  ```
+
+---
+
+## Running the Demo
+
+You can run the demo either using **Docker Compose** (recommended for production-like reverse proxy routing) or as **Local Development Services**.
+
+### Option A: Docker Compose (Recommended)
+
+Docker Compose starts the backend, frontend, and an Nginx reverse proxy on port `8080`.
+
+1. Start all services:
+   ```bash
+   docker compose up --build
+   ```
+2. Open your browser:
+   * **Application URL:** `http://localhost:8080/token-exchange/`
+3. Port mappings:
+   * `8080`: Nginx Reverse Proxy (routes `/token-exchange/` to frontend and `/api/` to backend)
+   * `5173`: Vite frontend
+   * `3001`: Express backend
+
+To stop the containers:
+```bash
+docker compose down
+```
+
+---
+
+### Option B: Local Development (Node.js)
+
+Ensure Node.js (v18+) is installed.
+
+#### 1. Start the Backend
+```bash
+cd backend
+npm install
+npm run dev
+```
+The backend server runs at `http://localhost:3001`.
+
+#### 2. Start the Frontend
+In a new terminal:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+The frontend Vite server runs at `http://localhost:5173`.
+* Access the app at: `http://localhost:5173/token-exchange/`
+* During development, Vite automatically proxies all `/api/*` calls to `http://localhost:3001`.
+
+---
+
+## Adapting to an Enterprise Identity Provider
+
+Out of the box, the backend runs a **self-contained mock Identity Provider** using `jsonwebtoken` so you can test and explore the demo immediately without requiring third-party credentials.
+
+To connect this demo to an external OAuth 2.0 provider that supports RFC 8693 (such as **Auth0**, **Okta**, **PingIdentity**, or **Gravitee**):
+
+1. **Register Applications in your IdP:**
+   * **Human Application:** Regular Web Application / Confidential Client (Authorization Code grant).
+   * **AI Agent Application:** Machine-to-Machine / Confidential Client (Client Credentials & Token Exchange grants).
+2. **Update the BFF (`backend/server.js`):**
+   * Replace the local JWT signing functions with outbound HTTPS requests to your IdP's token endpoint (`POST /oauth/token`).
+   * Forward client credentials (`HUMAN_CLIENT_SECRET`, `AGENT_CLIENT_SECRET`) securely from backend environment variables.
+   * Verify IdP tokens using the provider's JWKS endpoint (`/.well-known/jwks.json`).
+
+---
+
+## Security Considerations
+
+* **Confidential Clients:** The frontend never stores or handles client secrets. All token operations requiring client authentication stay on the BFF.
+* **Audience Restriction:** Downstream resources must strictly validate the `aud` claim to prevent token forwarding and cross-service impersonation attacks.
+* **Short-Lived Delegated Tokens:** Exchanged tokens should have short expirations to minimize risk in automated workflows.
+* **Production Hardening:** In production applications, store tokens in secure, `HttpOnly`, `SameSite` cookies instead of browser memory, and enforce TLS/HTTPS across all endpoints.
+
+---
+
+## License
+
+MIT
